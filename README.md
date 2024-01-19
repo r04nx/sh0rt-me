@@ -1,4 +1,4 @@
-# sh0rt me - Link Shortener
+# sh0rt me - Link Shortener🔗
 
 **sh0rt me** is a PHP web application designed to simplify URL sharing. Quickly generate short links for easy sharing across platforms.
 
