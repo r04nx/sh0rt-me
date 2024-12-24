@@ -4,19 +4,28 @@ $uri = $_SERVER['REQUEST_URI'];
 $parts = explode('/', $uri);
 $value = end($parts);
 // echo $value;
-if (!$value == '') {
+if (!empty($value)) {
     include('db.php');
-    $sql =  "SELECT longurl from urls WHERE shorturl = '$value';";
-    $result = mysqli_query($conn, $sql);
-    $row = mysqli_fetch_assoc($result);
-    if (isset($row['longurl'])) {
-        extract($row);
-        // echo $longurl;
-        header("Location: $longurl");
+    $stmt = $conn->prepare("SELECT id, longurl FROM urls WHERE shorturl = ?");
+    $stmt->bind_param("s", $value);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($row = $result->fetch_assoc()) {
+        // Record analytics
+        $visitor_ip = $_SERVER['REMOTE_ADDR'];
+        $user_agent = $_SERVER['HTTP_USER_AGENT'];
+        $url_id = $row['id'];
+        
+        $stmt = $conn->prepare("INSERT INTO url_analytics (url_id, visitor_ip, user_agent) VALUES (?, ?, ?)");
+        $stmt->bind_param("iss", $url_id, $visitor_ip, $user_agent);
+        $stmt->execute();
+        
+        header("Location: " . $row['longurl']);
+        exit();
     } else {
         echo "<script>var notfound = '404';
-                var notfound2 = 'URL not found'
-        </script>";
+              var notfound2 = 'URL not found';</script>";
     }
 }
 
@@ -60,10 +69,26 @@ if (!$value == '') {
             </script>
             <p class="text-lg text-gray-600 mb-8">Shorten and share your links effortlessly.</p>
             <div class="flex flex-col md:flex-row items-center">
-                <form method="post" class="flex">
-                    <input type="text" name="longurl" placeholder="Enter your long URL" class="py-2 px-4 rounded-l-md h-10 md:w-80 mb-4 md:mb-0" required>
-                    <button type="submit" name="submit" value="Submit" class="py-2 px-4 rounded-r-md bg-blue-600 h-10 text-white transition duration-300 hover:bg-blue-700 focus:outline-none">Shorten</button>
-
+                <form method="post" class="flex flex-col gap-4">
+                    <div class="flex">
+                        <input type="text" name="longurl" placeholder="Enter your long URL" 
+                               class="py-2 px-4 rounded-l-md h-10 md:w-80 mb-4 md:mb-0" required>
+                        <button type="submit" name="submit" value="Submit" 
+                                class="py-2 px-4 rounded-r-md bg-blue-600 h-10 text-white transition duration-300 hover:bg-blue-700 focus:outline-none">
+                            Shorten
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="useCustom" name="useCustom" class="form-checkbox h-4 w-4 text-blue-600">
+                        <label for="useCustom" class="text-sm text-gray-600">Use custom text</label>
+                    </div>
+                    <div id="customUrlField" class="hidden">
+                        <input type="text" name="customText" pattern="[a-zA-Z0-9-_]+" 
+                               placeholder="Enter custom text (letters, numbers, - and _ only)" 
+                               class="py-2 px-4 rounded-md h-10 w-full"
+                               minlength="4" maxlength="20">
+                        <p class="text-xs text-gray-500 mt-1">4-20 characters, alphanumeric, dash and underscore only</p>
+                    </div>
                 </form>
             </div>
             <div id='result' style='  zoom:70%; border-top: 1px solid black;border-bottom: 1px solid;' class="flex  hidden flex-col md:flex-row items-center">
@@ -186,44 +211,71 @@ if (isset($_POST['submit']) && isset($_POST['longurl'])) {
     $domain = $_SERVER['HTTP_HOST'];
 
     if (filter_var($longurl, FILTER_VALIDATE_URL)) {
-
         $parsed_url = parse_url($longurl);
-
+        
         if (strpos($parsed_url['host'], $domain) !== false) {
-            echo "<script>showErrorAlert('Error, can not shorten this url') </script>";
+            echo "<script>showErrorAlert('Error: Cannot shorten URLs from this domain')</script>";
         } else {
             include_once('db.php');
-            $sql = "Select shorturl from urls where longurl = '$longurl';";
-            $result = mysqli_query($conn, $sql);
-            $row =  mysqli_fetch_assoc($result);
-            if (isset($row['shorturl'])) {
-                $url = $domain . "/" . $row['shorturl'];
-                echo "<script> 
-        document.getElementById('result').style.display = 'flex';
-        document.getElementById('shorturl').value = '$url';
-        showSuccessAlert('');
-        </script>";
+            
+            // Check if using custom text
+            if (isset($_POST['useCustom']) && isset($_POST['customText']) && !empty($_POST['customText'])) {
+                $custom_text = preg_replace('/[^a-zA-Z0-9\-_]/', '', $_POST['customText']);
+                
+                // Validate custom text
+                if (strlen($custom_text) < 4 || strlen($custom_text) > 20) {
+                    echo "<script>showErrorAlert('Custom text must be between 4 and 20 characters')</script>";
+                    exit();
+                }
+                
+                // Check if custom text is available
+                $stmt = $conn->prepare("SELECT id FROM urls WHERE shorturl = ? OR custom_text = ?");
+                $stmt->bind_param("ss", $custom_text, $custom_text);
+                $stmt->execute();
+                if ($stmt->get_result()->num_rows > 0) {
+                    echo "<script>showErrorAlert('This custom text is already taken')</script>";
+                    exit();
+                }
+                
+                $shorturl = $custom_text;
+                $is_custom = true;
             } else {
-
-
-                include('db.php');
+                // Generate random short URL
                 $shorturl = substr(uniqid(), -5);
-                $sql = "INSERT into urls(longurl, shorturl) value('$longurl','$shorturl');";
-                $url = $domain . "/" . $shorturl;
-
-
-
-                if (mysqli_query($conn, $sql)) {
-                    echo "<script> 
-        document.getElementById('result').style.display = 'flex';
-        document.getElementById('shorturl').value = '$url';
-        showSuccessAlert('');
-        </script>";
+                $is_custom = false;
+            }
+            
+            // Check if URL already exists
+            $stmt = $conn->prepare("SELECT shorturl FROM urls WHERE longurl = ?");
+            $stmt->bind_param("s", $longurl);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            
+            if ($row = $result->fetch_assoc()) {
+                $url = $domain . "/" . $row['shorturl'];
+                echo "<script>
+                    document.getElementById('result').style.display = 'flex';
+                    document.getElementById('shorturl').value = '$url';
+                    showSuccessAlert('URL was already shortened before');
+                </script>";
+            } else {
+                $stmt = $conn->prepare("INSERT INTO urls (longurl, shorturl, is_custom, custom_text) VALUES (?, ?, ?, ?)");
+                $stmt->bind_param("ssss", $longurl, $shorturl, $is_custom, $custom_text);
+                
+                if ($stmt->execute()) {
+                    $url = $domain . "/" . $shorturl;
+                    echo "<script>
+                        document.getElementById('result').style.display = 'flex';
+                        document.getElementById('shorturl').value = '$url';
+                        showSuccessAlert('URL shortened successfully');
+                    </script>";
+                } else {
+                    echo "<script>showErrorAlert('Error creating short URL')</script>";
                 }
             }
         }
     } else {
-        echo "<script> showErrorAlert('Error, Please enter a valid url') </script>";
+        echo "<script>showErrorAlert('Please enter a valid URL')</script>";
     }
 }
 

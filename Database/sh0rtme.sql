@@ -32,7 +32,11 @@ CREATE TABLE `urls` (
   `id` int(11) NOT NULL,
   `longurl` varchar(500) NOT NULL,
   `shorturl` varchar(30) NOT NULL,
-  `time` date NOT NULL DEFAULT current_timestamp()
+  `time` date NOT NULL DEFAULT current_timestamp(),
+  `is_custom` BOOLEAN DEFAULT FALSE,
+  `custom_text` varchar(30) DEFAULT NULL,
+  UNIQUE KEY `unique_shorturl` (`shorturl`),
+  UNIQUE KEY `unique_custom` (`custom_text`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -81,3 +85,36 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+--
+-- Table structure for table `url_analytics`
+--
+
+CREATE TABLE `url_analytics` (
+  `id` int(11) NOT NULL,
+  `url_id` int(11) NOT NULL,
+  `visitor_ip` varchar(45) NOT NULL,
+  `user_agent` text NOT NULL,
+  `visited_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `country` varchar(100) NOT NULL,
+  `city` varchar(100) NOT NULL,
+  `browser` varchar(100) NOT NULL,
+  `platform` varchar(100) NOT NULL,
+  FOREIGN KEY (`url_id`) REFERENCES `urls`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+--
+-- Table structure for table `files`
+--
+
+CREATE TABLE `files` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `filename` varchar(255) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `mime_type` varchar(100) NOT NULL,
+  `file_size` int(11) NOT NULL,
+  `upload_date` datetime DEFAULT CURRENT_TIMESTAMP,
+  `file_path` varchar(500) NOT NULL,
+  `is_public` boolean DEFAULT FALSE,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
